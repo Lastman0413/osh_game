@@ -3,76 +3,46 @@ import math
 
 # --- 초기 설정 ---
 pygame.init()
-WINDOW_WIDTH, WINDOW_HEIGHT = 1000, 800
+WINDOW_WIDTH, WINDOW_HEIGHT = 800, 600
 info = pygame.display.Info()
 FULLSCREEN_WIDTH, FULLSCREEN_HEIGHT = info.current_w, info.current_h
 
 FPS = 60
 TILE_SIZE = 40
 
-# 색상 정의
+# 색상 정의 (미니 팔레트)
 COLOR_BG = (30, 30, 35)
 COLOR_WALL = (160, 150, 140)
 COLOR_WALL_TOP = (180, 170, 160)
-COLOR_FLOOR_LIVING = (220, 210, 190)
-COLOR_FLOOR_BEDROOM = (210, 200, 180)
-COLOR_FLOOR_KITCHEN = (200, 190, 170)
-COLOR_FLOOR_BATH = (240, 248, 255)
-COLOR_FLOOR_BALCONY = (190, 190, 190)
-COLOR_GRID = (180, 180, 180)
-COLOR_DOOR = (139, 90, 60)
-COLOR_DOOR_GLOW = (255, 200, 100)
+COLOR_FLOOR = (220, 210, 190)
+COLOR_GRID = (200, 200, 200)
 COLOR_BACKPACK = (85, 107, 47)
 COLOR_LIMB = (255, 203, 164)
 
 def to_iso(x, y):
+    """월드 좌표를 아이소메트릭 좌표로 변환"""
     return (x - y), (x + y) / 2
 
-# --- 독립 맵 클래스 ---
-class IndependentRoom:
-    def __init__(self, name, width, height, floor_color):
-        self.name = name
-        self.origin_x = 3
-        self.origin_y = 3
-        self.tw = width   # 타일 너비
-        self.th = height  # 타일 높이
-        self.floor_color = floor_color
-        self.wall_h = 90
-        self.wall_d = 15
-        self.doors = []  # 문 리스트
-    
-    def add_door(self, x, y, to_map, to_x, to_y, label="문"):
-        """문 추가 (타일 좌표)"""
-        self.doors.append({
-            "x": x,
-            "y": y,
-            "to_map": to_map,    # 연결될 맵 이름
-            "to_x": to_x,        # 도착 위치 x
-            "to_y": to_y,        # 도착 위치 y
-            "label": label
-        })
-    
-    def get_floor_rect(self):
-        """이동 가능 영역 (문 타일까지 포함해 모든 방향에서 출입 가능)"""
-        return pygame.Rect(
-            self.origin_x * TILE_SIZE,
-            self.origin_y * TILE_SIZE,
-            self.tw * TILE_SIZE,
-            self.th * TILE_SIZE
-        )
-    
-    def check_door_collision(self, pos):
-        """문 충돌 체크 (가장자리 문도 들어갈 수 있도록 영역을 바닥과 겹치게 확대)"""
-        for door in self.doors:
-            dx = (self.origin_x + door["x"]) * TILE_SIZE
-            dy = (self.origin_y + door["y"]) * TILE_SIZE
-            # 48x48로 넓혀서 바닥 경계(origin+0.5 타일) 안쪽에서도 문 인식되게 함
-            door_rect = pygame.Rect(dx - 24, dy - 24, 48, 48)
-            if door_rect.collidepoint(pos.x, pos.y):
-                return door
-        return None
+# --- 방 클래스 (미니 방식) ---
+class Room:
+    def __init__(self):
+        self.origin_x = 5
+        self.origin_y = 5
+        self.tw = 12  # 타일 너비
+        self.th = 10  # 타일 높이
+        self.wall_h = 90   # 벽 높이
+        self.wall_d = 15   # 벽 두께
 
-# --- 캐릭터 클래스 (수정 금지!) ---
+    def get_floor_rect(self):
+        """충돌 계산용 바닥 범위"""
+        return pygame.Rect(
+            self.origin_x * TILE_SIZE + 10,
+            self.origin_y * TILE_SIZE + 10,
+            self.tw * TILE_SIZE - 20,
+            self.th * TILE_SIZE - 20
+        )
+
+# --- 캐릭터 클래스 (우디 버전) ---
 class Character:
     def __init__(self, x, y, role="father"):
         self.world_pos = pygame.Vector2(x, y)
@@ -136,14 +106,16 @@ class Character:
 
         if move_vec.length() > 0:
             self.walk_count += 0.2
-            walkable = room.get_floor_rect()
+            floor_rect = room.get_floor_rect()
             
+            # X축 충돌 체크 (미니 방식)
             self.world_pos.x += move_vec.x
-            if not walkable.collidepoint(self.world_pos.x, self.world_pos.y):
+            if not floor_rect.collidepoint(self.world_pos.x, self.world_pos.y):
                 self.world_pos.x -= move_vec.x
             
+            # Y축 충돌 체크
             self.world_pos.y += move_vec.y
-            if not walkable.collidepoint(self.world_pos.x, self.world_pos.y):
+            if not floor_rect.collidepoint(self.world_pos.x, self.world_pos.y):
                 self.world_pos.y -= move_vec.y
         else:
             self.walk_count = 0
@@ -169,8 +141,9 @@ class Character:
         pants_rect = (cx - draw_w//2, pelvis_y - pants_h, draw_w, pants_h)
         pygame.draw.rect(surface, self.pants_color, pants_rect)
         
-        pygame.draw.line(surface, COLOR_LIMB, (cx - 4, pelvis_y), (cx - 4 - swing/2, cy + swing/2), 2)
-        pygame.draw.line(surface, COLOR_LIMB, (cx + 4, pelvis_y), (cx + 4 + swing/2, cy - swing/2), 2)
+        leg_thickness = 2
+        pygame.draw.line(surface, COLOR_LIMB, (cx - 4, pelvis_y), (cx - 4 - swing/2, cy + swing/2), leg_thickness)
+        pygame.draw.line(surface, COLOR_LIMB, (cx + 4, pelvis_y), (cx + 4 + swing/2, cy - swing/2), leg_thickness)
         
         body_top = pelvis_y - pants_h
         body_rect = (cx - draw_w//2, body_top - (self.body_h - pants_h), draw_w, self.body_h - pants_h)
@@ -181,10 +154,11 @@ class Character:
             pygame.draw.rect(surface, COLOR_BACKPACK, bag_rect, border_radius=2)
         
         shoulder_y = body_top - (self.body_h - pants_h) + 3
+        arm_thickness = 2
         pygame.draw.line(surface, COLOR_LIMB, (cx - draw_w//2, shoulder_y), 
-                        (cx - draw_w//2 - 8, shoulder_y + 18 - swing), 2)
+                        (cx - draw_w//2 - 8, shoulder_y + 18 - swing), arm_thickness)
         pygame.draw.line(surface, COLOR_LIMB, (cx + draw_w//2, shoulder_y), 
-                        (cx + draw_w//2 + 8, shoulder_y + 18 + swing), 2)
+                        (cx + draw_w//2 + 8, shoulder_y + 18 + swing), arm_thickness)
         
         head_y = shoulder_y - 8
         pygame.draw.circle(surface, self.head_color, (int(cx), int(head_y)), self.head_r)
@@ -245,11 +219,11 @@ class Character:
             pygame.draw.circle(surface, (50, 50, 50), (int(eye_x - eye_spacing), int(eye_y)), 2)
             pygame.draw.circle(surface, (50, 50, 50), (int(eye_x + eye_spacing), int(eye_y)), 2)
 
-# --- 렌더링 ---
-def render_room(screen, room, characters, cam_off):
+# --- 렌더링 (미니 방식) ---
+def render_game(screen, room, characters, cam_off):
     screen.fill(COLOR_BG)
     
-    # 1. 바닥
+    # 1. 바닥 그리기
     for tx in range(room.tw):
         for ty in range(room.th):
             wx = (room.origin_x + tx) * TILE_SIZE
@@ -262,9 +236,9 @@ def render_room(screen, room, characters, cam_off):
                 (ix + cam_off[0], iy + TILE_SIZE + cam_off[1]),
                 (ix - TILE_SIZE + cam_off[0], iy + TILE_SIZE/2 + cam_off[1])
             ]
-            pygame.draw.polygon(screen, room.floor_color, pts)
+            pygame.draw.polygon(screen, COLOR_FLOOR, pts)
             pygame.draw.polygon(screen, COLOR_GRID, pts, 1)
-    
+
     # 2. 북쪽 벽
     bx = room.origin_x * TILE_SIZE
     by = room.origin_y * TILE_SIZE
@@ -273,6 +247,7 @@ def render_room(screen, room, characters, cam_off):
     b_iso = to_iso(bx, by)
     e_iso = to_iso(ex, ey)
     
+    # 벽면
     wall_pts = [
         (b_iso[0] + cam_off[0], b_iso[1] + cam_off[1]),
         (e_iso[0] + cam_off[0], e_iso[1] + cam_off[1]),
@@ -281,6 +256,7 @@ def render_room(screen, room, characters, cam_off):
     ]
     pygame.draw.polygon(screen, COLOR_WALL, wall_pts)
     
+    # 벽 윗면
     top_pts = [
         (b_iso[0] + cam_off[0], b_iso[1] - room.wall_h + cam_off[1]),
         (e_iso[0] + cam_off[0], e_iso[1] - room.wall_h + cam_off[1]),
@@ -288,7 +264,7 @@ def render_room(screen, room, characters, cam_off):
         (b_iso[0] + cam_off[0], b_iso[1] - room.wall_h - room.wall_d + cam_off[1])
     ]
     pygame.draw.polygon(screen, COLOR_WALL_TOP, top_pts)
-    
+
     # 3. 서쪽 벽
     bx = room.origin_x * TILE_SIZE
     by = room.origin_y * TILE_SIZE
@@ -297,6 +273,7 @@ def render_room(screen, room, characters, cam_off):
     b_iso = to_iso(bx, by)
     e_iso = to_iso(ex, ey)
     
+    # 벽면
     wall_pts = [
         (b_iso[0] + cam_off[0], b_iso[1] + cam_off[1]),
         (e_iso[0] + cam_off[0], e_iso[1] + cam_off[1]),
@@ -305,6 +282,7 @@ def render_room(screen, room, characters, cam_off):
     ]
     pygame.draw.polygon(screen, COLOR_WALL, wall_pts)
     
+    # 벽 윗면
     top_pts = [
         (b_iso[0] + cam_off[0], b_iso[1] - room.wall_h + cam_off[1]),
         (e_iso[0] + cam_off[0], e_iso[1] - room.wall_h + cam_off[1]),
@@ -313,148 +291,47 @@ def render_room(screen, room, characters, cam_off):
     ]
     pygame.draw.polygon(screen, COLOR_WALL_TOP, top_pts)
     
-    # 4. 문 그리기
-    for door in room.doors:
-        dx = (room.origin_x + door["x"]) * TILE_SIZE
-        dy = (room.origin_y + door["y"]) * TILE_SIZE
-        iso_d = to_iso(dx, dy)
-        
-        # 문 빛 효과
-        pygame.draw.circle(screen, COLOR_DOOR_GLOW, 
-                          (int(iso_d[0] + cam_off[0]), int(iso_d[1] + cam_off[1])), 25)
-        # 문
-        door_rect = pygame.Rect(iso_d[0] + cam_off[0] - 20, iso_d[1] + cam_off[1] - 20, 40, 40)
-        pygame.draw.rect(screen, COLOR_DOOR, door_rect, border_radius=8)
-        pygame.draw.rect(screen, (100, 60, 30), door_rect, 3, border_radius=8)
-    
-    # 5. 캐릭터
+    # 4. 캐릭터 그리기
     for char in characters:
         char.draw(screen, cam_off)
 
-# --- 메인 ---
 def main():
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("아파트 - 독립 맵 시스템")
+    pygame.display.set_caption("미니 방 + 우디 캐릭터")
     clock = pygame.time.Clock()
+    is_fullscreen = False
+    cur_w, cur_h = WINDOW_WIDTH, WINDOW_HEIGHT
     
-    # 맵 생성
-    rooms = {}
+    room = Room()
+    father = Character(400, 400, "father")
+    mother = Character(360, 360, "mother")
+    daughter = Character(320, 320, "daughter")
     
-    # 주방 및 식당 (중앙 허브)
-    rooms["kitchen"] = IndependentRoom("주방 및 식당", 12, 10, COLOR_FLOOR_KITCHEN)
-    rooms["kitchen"].add_door(2, 0, "bedroom1", 6, 8, "침실1로")
-    rooms["kitchen"].add_door(6, 0, "bathroom", 3, 8, "욕실로")
-    rooms["kitchen"].add_door(10, 0, "bedroom2", 4, 8, "침실2로")
-    rooms["kitchen"].add_door(0, 5, "living", 11, 5, "거실로")
-    rooms["kitchen"].add_door(11, 5, "living", 0, 5, "거실로")
-    rooms["kitchen"].add_door(6, 9, "entrance", 3, 1, "현관으로")
-    
-    # 침실1
-    rooms["bedroom1"] = IndependentRoom("침실1", 10, 8, COLOR_FLOOR_BEDROOM)
-    rooms["bedroom1"].add_door(6, 8, "kitchen", 2, 1, "주방으로")
-    
-    # 욕실
-    rooms["bathroom"] = IndependentRoom("욕실", 6, 8, COLOR_FLOOR_BATH)
-    rooms["bathroom"].add_door(3, 8, "kitchen", 6, 1, "주방으로")
-    
-    # 침실2
-    rooms["bedroom2"] = IndependentRoom("침실2", 10, 8, COLOR_FLOOR_BEDROOM)
-    rooms["bedroom2"].add_door(4, 8, "kitchen", 10, 1, "주방으로")
-    rooms["bedroom2"].add_door(9, 4, "balcony", 1, 4, "발코니로")
-    
-    # 거실
-    rooms["living"] = IndependentRoom("거실", 12, 10, COLOR_FLOOR_LIVING)
-    rooms["living"].add_door(0, 5, "kitchen", 11, 5, "주방으로")
-    rooms["living"].add_door(11, 5, "kitchen", 1, 5, "주방으로")
-    rooms["living"].add_door(11, 8, "balcony", 1, 6, "발코니로")
-    rooms["living"].add_door(0, 3, "entrance", 7, 2, "현관으로")
-    
-    # 발코니
-    rooms["balcony"] = IndependentRoom("발코니", 6, 10, COLOR_FLOOR_BALCONY)
-    rooms["balcony"].add_door(0, 4, "bedroom2", 9, 4, "침실2로")
-    rooms["balcony"].add_door(0, 6, "living", 11, 8, "거실로")
-    
-    # 현관
-    rooms["entrance"] = IndependentRoom("현관", 8, 6, COLOR_FLOOR_LIVING)
-    rooms["entrance"].add_door(3, 0, "kitchen", 6, 9, "주방으로")
-    rooms["entrance"].add_door(7, 2, "living", 0, 3, "거실로")
-    
-    # 현재 맵
-    current_room_name = "kitchen"
-    current_room = rooms[current_room_name]
-    
-    # 캐릭터
-    father = Character(250, 250, "father")
-    mother = Character(210, 210, "mother")
-    daughter = Character(170, 170, "daughter")
     characters = [daughter, mother, father]
-    
-    font = pygame.font.SysFont('malgungothic', 28)
     
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT: 
                 pygame.quit()
                 return
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+                is_fullscreen = not is_fullscreen
+                if is_fullscreen:
+                    screen = pygame.display.set_mode((FULLSCREEN_WIDTH, FULLSCREEN_HEIGHT), pygame.FULLSCREEN)
+                    cur_w, cur_h = FULLSCREEN_WIDTH, FULLSCREEN_HEIGHT
+                else:
+                    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+                    cur_w, cur_h = WINDOW_WIDTH, WINDOW_HEIGHT
 
-        father.update(room=current_room)
-        mother.update(father.world_pos, current_room)
-        daughter.update(mother.world_pos, current_room)
-        
-        # 문 충돌 체크
-        door = current_room.check_door_collision(father.world_pos)
-        if door:
-            # 맵 전환
-            current_room_name = door["to_map"]
-            current_room = rooms[current_room_name]
-            
-            # 문 위치(월드)
-            door_x = (current_room.origin_x + door["to_x"]) * TILE_SIZE
-            door_y = (current_room.origin_y + door["to_y"]) * TILE_SIZE
-            walkable = current_room.get_floor_rect()
-            
-            # 방 안쪽 방향: 문 → 방 중심 (전환 후 문 충돌 영역 밖으로 한 칸 밀어 넣기)
-            room_center_x = (current_room.origin_x + current_room.tw / 2) * TILE_SIZE
-            room_center_y = (current_room.origin_y + current_room.th / 2) * TILE_SIZE
-            dir_x = room_center_x - door_x
-            dir_y = room_center_y - door_y
-            length = math.sqrt(dir_x * dir_x + dir_y * dir_y)
-            if length < 1:
-                dir_x, dir_y = 0, 1
-            else:
-                dir_x, dir_y = dir_x / length, dir_y / length
-            
-            # 문 충돌(48x48) 밖으로 한 걸음(35px) 안쪽에 배치 → 다음 프레임에 다시 문으로 인식되지 않음
-            new_x = door_x + dir_x * 35
-            new_y = door_y + dir_y * 35
-            
-            # 아버지: 바닥 안으로 클램프
-            fx = max(walkable.x, min(walkable.x + walkable.w, new_x))
-            fy = max(walkable.y, min(walkable.y + walkable.h, new_y))
-            father.world_pos = pygame.Vector2(fx, fy)
-            
-            # 엄마·딸: 아버지 뒤쪽(방 안쪽)에 배치 후 클램프
-            mother.world_pos = pygame.Vector2(fx + dir_x * 50, fy + dir_y * 50)
-            mother.world_pos.x = max(walkable.x, min(walkable.x + walkable.w, mother.world_pos.x))
-            mother.world_pos.y = max(walkable.y, min(walkable.y + walkable.h, mother.world_pos.y))
-            
-            daughter.world_pos = pygame.Vector2(fx + dir_x * 100, fy + dir_y * 100)
-            daughter.world_pos.x = max(walkable.x, min(walkable.x + walkable.w, daughter.world_pos.x))
-            daughter.world_pos.y = max(walkable.y, min(walkable.y + walkable.h, daughter.world_pos.y))
+        father.update(room=room)
+        mother.update(father.world_pos, room)
+        daughter.update(mother.world_pos, room)
         
         # 카메라
         ix, iy = to_iso(father.world_pos.x, father.world_pos.y)
-        cam_off = (WINDOW_WIDTH // 2 - ix, WINDOW_HEIGHT // 2 - iy)
+        cam_off = (cur_w // 2 - ix, cur_h // 2 - iy)
         
-        render_room(screen, current_room, characters, cam_off)
-        
-        # UI
-        text = font.render(f"{current_room.name} | WASD: 이동 | 문: 노란 빛", True, (255, 255, 255))
-        text_bg = pygame.Surface((text.get_width() + 20, text.get_height() + 10))
-        text_bg.fill((0, 0, 0))
-        text_bg.set_alpha(180)
-        screen.blit(text_bg, (10, 10))
-        screen.blit(text, (20, 15))
+        render_game(screen, room, characters, cam_off)
         
         pygame.display.flip()
         clock.tick(FPS)
